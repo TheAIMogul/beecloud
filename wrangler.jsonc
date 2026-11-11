@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "beecloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  // Pulls from Bee every 15 minutes.
+  "triggers": { "crons": ["*/15 * * * *"] },
+  // The archive itself: every item in Bee's original format, forever.
+  "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "beecloud-archive" }],
+  // The search index, sync queue and agent keys. The Deploy to Cloudflare button fills in the id.
+  "d1_databases": [{ "binding": "DB", "database_name": "beecloud-index", "database_id": "00000000-0000-0000-0000-000000000000" }],
+  "vars": { "BEE_API": "https://api.developer.bee.amazon.dev" }
+  // Optional secrets: PUSHBULLET_TOKEN (phone alerts), ADMIN_TOKEN (admin key recovery), BEE_TOKEN (Bee key override)
+}

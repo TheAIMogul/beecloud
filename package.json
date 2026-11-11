@@ -1,0 +1,32 @@
+{
+  "name": "beecloud",
+  "version": "1.0.0",
+  "description": "Your Bee wearable, archived in your own Cloudflare account and served to your AI agents over MCP.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-concurrency=1 --test-timeout=60000 --test-reporter=spec tests/worker.test.mjs",
+    "check": "npm run typecheck && npm test"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ARCHIVE": { "description": "R2 bucket that holds the permanent archive of your Bee data." },
+      "DB": { "description": "D1 database for the search index, sync queue and agent keys." },
+      "BEE_API": { "description": "Bee's developer API. Leave as is." }
+    }
+  },
+  "dependencies": {
+    "tweetnacl": "1.0.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261030.1",
+    "esbuild": "0.28.2",
+    "miniflare": "4.20260730.0",
+    "typescript": "7.0.2",
+    "wrangler": "4.155.0"
+  }
+}
