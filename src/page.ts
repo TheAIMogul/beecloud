@@ -104,7 +104,7 @@ li{margin:4px 0}
     <div class="err" id="keyErr"></div>
     <div id="newKey" hidden>
       <div class="box"><label>Key: shown once</label><code id="k1"></code><button class="copy" data-copy="k1">Copy</button></div>
-      <div class="box"><label>claude.ai connector URL</label><code id="k2"></code><button class="copy" data-copy="k2">Copy</button><p class="hint">In claude.ai: Settings → Connectors → Add custom connector.</p></div>
+      <div class="box"><label>Connector URL for tools that can't send headers</label><code id="k2"></code><button class="copy" data-copy="k2">Copy</button><p class="hint">The Gemini app and claude.ai don't need a key: add this BeeCloud's address in their custom app or connector screen and sign in with your admin key.</p></div>
       <div class="box"><label>Claude Code command</label><code id="k3"></code><button class="copy" data-copy="k3">Copy</button></div>
       <div class="box"><label>Prompt for any other agent</label><pre id="k4"></pre><button class="copy" data-copy="k4">Copy</button></div>
     </div>
@@ -117,7 +117,7 @@ li{margin:4px 0}
   </section>
 
   <section>
-    <p class="muted small">Full guide, every tool and the web links: see <code>docs/GUIDE.md</code> in the BeeCloud repository. <button class="link" id="signout">Sign out</button></p>
+    <p class="muted small">Instructions any agent can read: <a href="/guide">/guide</a>. Full guide, every tool and the web links: <code>docs/GUIDE.md</code> in the BeeCloud repository. <button class="link" id="signout">Sign out</button></p>
   </section>
 </div>
 </main>

@@ -473,7 +473,7 @@ describe("claude.ai connector", () => {
     assert.equal((await post(`/mcp/${dbAdmin}`)).status, 401, "admin keys are refused in a URL");
     assert.equal((await w.api("/api/status", { key: dbAdmin })).status, 200, "but work in a header");
     assert.equal((await post("/mcp/wrong-key-1234567890")).status, 401);
-    assert.equal((await w.api("/.well-known/oauth-authorization-server", { key: null })).status, 404);
+    assert.equal((await w.api("/.well-known/security.txt", { key: null })).status, 404);
   }));
 });
 
@@ -492,9 +492,9 @@ describe("first-time setup", () => {
   };
 
   test("the page loads without a key and gives nothing away", fresh(async (w) => {
-    const page = await w.api("/", { key: null });
+    const page = await w.api("/", { key: null, headers: { Accept: "text/html" } });
     assert.equal(page.status, 200);
-    assert.ok((await page.text()).includes("BeeCloud"));
+    assert.ok((await page.text()).includes("BeeCloud setup"), "browsers get the owner's setup page");
     assert.deepEqual((await setup(w, "/state", { method: "GET" })).json, { claimed: false });
     assert.equal((await setup(w, "/status", { method: "GET" })).status, 401);
     assert.equal((await w.api("/api/todos", { key: null })).status, 401);
@@ -579,4 +579,214 @@ describe("first-time setup", () => {
     assert.equal((await setup(w, "/status", { key: agent, method: "GET" })).status, 403);
     assert.equal((await setup(w, "/bee/start", { key: agent })).status, 403);
   }));
+});
+
+describe("instructions for agents", () => {
+  const PW = "Pw-test#123";
+  const withPw = (fn) => async () => {
+    const w = await start(makeBee(), { ACCESS_PASSWORD: PW });
+    try {
+      await fn(w);
+    } finally {
+      await w.stop();
+    }
+  };
+
+  test("public pages describe every agent tool and never show a credential", withPw(async (w) => {
+    for (const path of ["/llms.txt", "/AGENTS.md", "/skill.md", "/SKILL.md", "/openapi.json", "/guide"]) {
+      const res = await w.api(path, { key: null });
+      assert.equal(res.status, 200, path);
+      const body = await res.text();
+      for (const secret of [PW, "admin-key", "bee-token", "pb-token"]) assert.ok(!body.includes(secret), `${path} leaks ${secret}`);
+      assert.ok(body.includes(path === "/openapi.json" ? '"url":"https://x"' : "https://x/mcp"), `${path} uses the address it was reached on`);
+    }
+    const llms = await (await w.api("/llms.txt", { key: null })).text();
+    for (const t of ["get_day", "search_conversations", "create_todo", "gemini mcp add", "claude mcp add", "Gemini app"]) assert.ok(llms.includes(t), t);
+    assert.ok(!llms.includes("create_key"), "admin tools stay unlisted");
+    assert.ok((await (await w.api("/skill.md", { key: null })).text()).startsWith("---\nname: beecloud\n"));
+    const ops = Object.keys((await (await w.api("/openapi.json", { key: null })).json()).paths);
+    assert.ok(ops.includes("/api/tools/get_day") && !ops.includes("/api/tools/create_key") && !ops.includes("/api/tools/get_photo"));
+    assert.equal((await w.api("/api/status", { key: null })).status, 401, "data still needs a login");
+  }));
+
+  test("the main address: setup page for browsers, instructions for agents, MCP for MCP clients", withPw(async (w) => {
+    assert.ok((await (await w.api("/", { key: null, headers: { Accept: "text/html" } })).text()).includes("BeeCloud setup"));
+    assert.equal(await (await w.api("/", { key: null, headers: { Accept: "*/*" } })).text(), await (await w.api("/llms.txt", { key: null })).text());
+    const mcp = (key) => w.api("/", { key, method: "POST", body: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
+    assert.equal((await mcp(null)).status, 401);
+    const ok = await mcp("admin-key");
+    assert.equal(ok.status, 200);
+    assert.ok((await ok.json()).result.tools.some((t) => t.name === "get_day"));
+    assert.equal((await w.api("/", { key: null, headers: { Accept: "text/event-stream" } })).status, 405);
+  }));
+});
+
+describe("password", () => {
+  const PW = "Pw-test#123";
+  const withPw = (fn) => async () => {
+    const w = await start(makeBee(), { ACCESS_PASSWORD: PW });
+    try {
+      await fn(w);
+    } finally {
+      await w.stop();
+    }
+  };
+  const from = (ip) => ({ "CF-Connecting-IP": ip });
+
+  test("works in every header form, never as admin, never in a URL", withPw(async (w) => {
+    assert.equal((await w.api("/api/status", { key: PW })).status, 200);
+    assert.equal((await w.api("/api/status", { key: null, headers: { "x-api-key": PW } })).status, 200);
+    assert.equal((await w.api("/api/status", { key: null, headers: { Authorization: `Basic ${Buffer.from(`me:${PW}`).toString("base64")}` } })).status, 200);
+    assert.equal((await w.tool("create_key", { name: "x" }, PW)).status, 403);
+    assert.equal((await w.api(`/mcp/${encodeURIComponent(PW)}`, { key: null, method: "POST", body: { jsonrpc: "2.0", id: 1, method: "ping" } })).status, 401);
+    const agent = (await w.tool("create_key", { name: "hermes" })).text;
+    assert.equal((await w.api(`/mcp/${agent}`, { key: null, method: "POST", body: { jsonrpc: "2.0", id: 1, method: "ping" } })).status, 200, "agent keys still work in the URL");
+  }));
+
+  test("without ACCESS_PASSWORD there is no password", async () => {
+    const w = await start(makeBee());
+    try {
+      assert.equal((await w.api("/api/status", { key: "anything" })).status, 401);
+    } finally {
+      await w.stop();
+    }
+  });
+
+  test("ten wrong guesses lock out one address for 15 minutes; keys skip the lockout", withPw(async (w) => {
+    for (let i = 0; i < 10; i++) assert.equal((await w.api("/api/status", { key: `guess-${i}`, headers: from("1.2.3.4") })).status, 401);
+    assert.equal((await w.api("/api/status", { key: PW, headers: from("1.2.3.4") })).status, 429);
+    assert.equal((await w.api("/api/status", { key: PW, headers: from("5.6.7.8") })).status, 200, "other addresses are unaffected");
+    const agent = (await w.tool("create_key", { name: "hermes" })).text;
+    assert.equal((await w.api("/api/status", { key: agent, headers: from("1.2.3.4") })).status, 200, "agents keep working");
+    const stale = "bee_" + "ab".repeat(32);
+    for (let i = 0; i < 15; i++) await w.api("/api/status", { key: stale, headers: from("7.7.7.7") });
+    assert.equal((await w.api("/api/status", { key: PW, headers: from("7.7.7.7") })).status, 200, "a stale key never counts as a guess");
+    await w.db.prepare(`UPDATE auth_failures SET first_at = first_at - 16 * 60000`).run();
+    assert.equal((await w.api("/api/status", { key: PW, headers: from("1.2.3.4") })).status, 200, "lockout ends");
+  }));
+});
+
+describe("sign-in for apps that can't send a key (Gemini app, claude.ai)", () => {
+  const PW = "Pw-test#123";
+  const REDIRECT = "https://gemini.test/callback";
+  const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const withW = (fn, bindings = { ACCESS_PASSWORD: PW }) => async () => {
+    const w = await start(makeBee(), bindings);
+    try {
+      await fn(w);
+    } finally {
+      await w.stop();
+    }
+  };
+  const raw = (w, path, init = {}) => w.mf.dispatchFetch(`https://x${path}`, { redirect: "manual", ...init });
+  const cookiesFrom = (res) => (res.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).filter((c) => !c.endsWith("="));
+  const handleIn = (html) => html.match(/name="handle" value="([^"]+)"/)?.[1].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
+  async function register(w, name = "Gemini") {
+    const res = await raw(w, "/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_name: name, redirect_uris: [REDIRECT], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }) });
+    assert.equal(res.status, 201, await res.clone().text());
+    return (await res.json()).client_id;
+  }
+  async function openLogin(w, clientId, resource = "https://x/mcp") {
+    const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    const path = `/authorize?${new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: REDIRECT, scope: "beecloud offline_access", state: "st8", code_challenge: challenge, code_challenge_method: "S256", resource })}`;
+    const res = await raw(w, path);
+    return { path, verifier, res, html: await res.text(), cookies: cookiesFrom(res) };
+  }
+  const submit = (w, path, cookies, fields, ip = "4.4.4.4") =>
+    raw(w, path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookies.join("; "), Origin: "https://x", "CF-Connecting-IP": ip }, body: new URLSearchParams(fields).toString() });
+  const exchange = (w, clientId, code, verifier, resource = "https://x/mcp") =>
+    raw(w, "/oauth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: REDIRECT, client_id: clientId, code_verifier: verifier, resource }).toString() });
+  const mcpList = (w, path, token) => raw(w, path, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+
+  test("apps discover the sign-in from the address alone", withW(async (w) => {
+    const challenge = await raw(w, "/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    assert.equal(challenge.status, 401);
+    assert.match(challenge.headers.get("WWW-Authenticate") ?? "", /resource_metadata="https:\/\/x\/\.well-known\/oauth-protected-resource/);
+    assert.match((await raw(w, "/", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).headers.get("WWW-Authenticate") ?? "", /resource_metadata=/);
+    const prm = await (await raw(w, "/.well-known/oauth-protected-resource")).json();
+    assert.equal(prm.resource, "https://x");
+    const as = await (await raw(w, "/.well-known/oauth-authorization-server")).json();
+    assert.equal(as.authorization_endpoint, "https://x/authorize");
+    assert.equal(as.registration_endpoint, "https://x/register");
+    assert.ok(as.code_challenge_methods_supported.includes("S256"));
+  }));
+
+  test("the owner signs in once with the password, then the app reads BeeCloud", withW(async (w) => {
+    const clientId = await register(w);
+    const login = await openLogin(w, clientId);
+    assert.equal(login.res.status, 200);
+    assert.ok(login.html.includes("Allow Gemini to use BeeCloud?") && login.html.includes("gemini.test"));
+    const wrong = await submit(w, login.path, login.cookies, { handle: handleIn(login.html), decision: "approve", password: "nope" });
+    assert.equal(wrong.status, 401);
+    const wrongHtml = await wrong.text();
+    assert.ok(wrongHtml.includes("the password or an admin key"));
+    const ok = await submit(w, login.path, [...login.cookies, ...cookiesFrom(wrong)], { handle: handleIn(wrongHtml), decision: "approve", password: PW });
+    assert.equal(ok.status, 302, await ok.clone().text());
+    const back = new URL(ok.headers.get("Location"));
+    assert.equal(back.searchParams.get("state"), "st8");
+    const tokenRes = await exchange(w, clientId, back.searchParams.get("code"), login.verifier);
+    assert.equal(tokenRes.status, 200, await tokenRes.clone().text());
+    const tokens = await tokenRes.json();
+    for (const path of ["/mcp", "/"]) {
+      const res = await mcpList(w, path, tokens.access_token);
+      assert.equal(res.status, 200, path);
+      const names = (await res.json()).result.tools.map((t) => t.name);
+      assert.ok(names.includes("create_todo") && !names.includes("create_key"), `${path}: write, never admin`);
+    }
+    assert.equal((await raw(w, "/api/status", { headers: { Authorization: `Bearer ${tokens.access_token}` } })).status, 200);
+    assert.equal((await mcpList(w, "/mcp", tokens.access_token.slice(0, -2) + "zz")).status, 401, "a forged token fails");
+    const refreshed = await raw(w, "/oauth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: clientId }).toString() });
+    assert.equal(refreshed.status, 200, "the app stays signed in");
+  }));
+
+  test("without a password, the admin key from setup signs in; agent keys don't", withW(async (w) => {
+    const agent = (await w.tool("create_key", { name: "hermes" })).text;
+    const dbAdmin = (await w.tool("create_key", { name: "owner2", scope: "admin" })).text;
+    const clientId = await register(w);
+    const login = await openLogin(w, clientId, "https://x");
+    const no = await submit(w, login.path, login.cookies, { handle: handleIn(login.html), decision: "approve", password: agent });
+    assert.equal(no.status, 401, "an agent key can't approve apps");
+    const html = await no.text();
+    const ok = await submit(w, login.path, [...login.cookies, ...cookiesFrom(no)], { handle: handleIn(html), decision: "approve", password: dbAdmin });
+    assert.equal(ok.status, 302);
+    const tokenRes = await exchange(w, clientId, new URL(ok.headers.get("Location")).searchParams.get("code"), login.verifier, "https://x");
+    assert.equal(tokenRes.status, 200, await tokenRes.clone().text());
+    assert.equal((await mcpList(w, "/mcp", (await tokenRes.json()).access_token)).status, 200);
+  }, {}));
+
+  test("Deny sends the app away with nothing, and wrong guesses share the lockout", withW(async (w) => {
+    const login = await openLogin(w, await register(w));
+    const denied = await submit(w, login.path, login.cookies, { handle: handleIn(login.html), decision: "deny" });
+    assert.equal(denied.status, 302);
+    assert.equal(new URL(denied.headers.get("Location")).searchParams.get("error"), "access_denied");
+    const again = await openLogin(w, await register(w));
+    let html = again.html;
+    let cookies = again.cookies;
+    for (let i = 0; i < 10; i++) {
+      const res = await submit(w, again.path, cookies, { handle: handleIn(html), decision: "approve", password: `guess-${i}` }, "8.8.8.8");
+      html = await res.text();
+      cookies = [...cookies, ...cookiesFrom(res)];
+    }
+    assert.equal((await submit(w, again.path, cookies, { handle: handleIn(html), decision: "approve", password: PW }, "8.8.8.8")).status, 429);
+  }));
+
+  test("an app's name can't inject anything into the page", withW(async (w) => {
+    const login = await openLogin(w, await register(w, "<img src=x onerror=alert(1)>"));
+    assert.ok(!login.html.includes("<img src=x") && login.html.includes("&#60;img"));
+  }));
+
+  test("sign-in stays off over plain HTTP or without its storage; keys still work", async () => {
+    for (const opts of [{ origin: "http://x" }, { kv: false }]) {
+      const w = await start(makeBee(), { ACCESS_PASSWORD: PW }, opts);
+      try {
+        assert.equal((await w.api("/.well-known/oauth-authorization-server", { key: null })).status, 404);
+        assert.notEqual((await w.api("/authorize", { key: null })).status, 200, "no sign-in page");
+        assert.equal((await w.api("/mcp", { key: null, method: "POST", body: {} })).status, 401);
+        assert.equal((await w.api("/api/status", { key: PW })).status, 200);
+      } finally {
+        await w.stop();
+      }
+    }
+  });
 });

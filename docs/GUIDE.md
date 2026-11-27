@@ -61,9 +61,13 @@ Data is at most 15 minutes behind Bee. Times are the owner's time zone, as Bee r
 |---|---|
 | Header `Authorization: Bearer YOUR_KEY` | Preferred. Works everywhere. |
 | Header `x-api-key: YOUR_KEY` | The tool only lets you set a custom header name. |
-| Key in the MCP address: `/mcp/YOUR_KEY` | The tool can't send headers at all (such as claude.ai connectors). Only works on `/mcp`, not on `/api/...`, and never with an admin key. |
+| HTTP Basic auth: any username, the key as the password | The tool only does Basic auth. |
+| Sign-in (OAuth 2.1) | Apps with a "custom app" or "connector" screen, such as the Gemini app and claude.ai. Give them the base URL; they open a BeeCloud sign-in page where you type the password or an admin key. |
+| Key in the MCP address: `/mcp/YOUR_KEY` | The tool can't send headers or sign in. Only works on `/mcp`, not on `/api/...`, and never with an admin key or the password. |
 
-There is **no OAuth**. Keys in a link's query string (`?token=` or `?key=`) are **refused**. Requests without a valid key get `401 {"error":"unauthorized"}`.
+If the Worker has an `ACCESS_PASSWORD` secret, the password works anywhere a key does, with agent access. Keys in a link's query string (`?token=` or `?key=`) are **refused**. Requests without a valid key get `401 {"error":"unauthorized"}`. Ten wrong passwords or keys from one address get `429` for 15 minutes.
+
+Setup instructions for agents are public at the base URL (for anything that doesn't ask for a web page), `/llms.txt`, `/guide`, `/skill.md` and `/openapi.json`. They never include a key or any data.
 
 An agent key can read everything and change todos and facts. It can't create keys or webhooks; those need the admin key. See section 12.
 
@@ -71,11 +75,18 @@ An agent key can read everything and change todos and facts. It can't create key
 
 ## 3. How to connect
 
+### Gemini app (custom app)
+1. On gemini.google.com open **Settings**, then **Connected apps**.
+2. Choose **Add a custom app** and enter `https://YOUR-WORKER.workers.dev`. Leave the advanced settings empty: Gemini registers itself.
+3. A BeeCloud sign-in page opens. Type your password or admin key and press **Allow**.
+
 ### claude.ai (custom connector)
 1. Open **Settings**, then **Connectors**.
 2. Tap **Add custom connector**.
-3. Name: `bee-cloud`. URL: `https://YOUR-WORKER.workers.dev/mcp/YOUR_KEY`
-4. Tap **Add**, then turn it on. New chats pick it up.
+3. Name: `bee-cloud`. URL: `https://YOUR-WORKER.workers.dev`
+4. Tap **Add**, sign in on the BeeCloud page that opens, then turn it on. New chats pick it up.
+
+Older setups that used `https://YOUR-WORKER.workers.dev/mcp/YOUR_KEY` keep working.
 
 ### Claude Code
 ```bash
@@ -891,7 +902,7 @@ CONNECT
 - Header: Authorization: Bearer YOUR_KEY
 - If you can't send headers, use this address instead: https://YOUR-WORKER.workers.dev/mcp/YOUR_KEY
 - If you can't use MCP, call https://YOUR-WORKER.workers.dev/api/tools/<tool name> with POST, a JSON body of arguments, and the same header.
-- Name the server "bee-cloud". There is no OAuth.
+- Name the server "bee-cloud". Full setup instructions: https://YOUR-WORKER.workers.dev/llms.txt
 
 HOW TO USE IT
 - "What happened on <day>": get_day with date (YYYY-MM-DD).
