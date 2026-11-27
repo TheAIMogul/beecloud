@@ -1,3 +1,5 @@
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+
 export interface Env {
   ARCHIVE: R2Bucket;
   DB: D1Database;
@@ -6,6 +8,9 @@ export interface Env {
   BEE_TOKEN?: string; // overrides the Bee key saved by the setup page
   ADMIN_TOKEN?: string; // overrides (and recovers) the admin key made on the setup page
   PUSHBULLET_TOKEN?: string; // turns on phone alerts
+  ACCESS_PASSWORD?: string; // a shared password agents can use instead of a key (write access, never admin)
+  OAUTH_KV?: KVNamespace; // sign-in grants for apps such as the Gemini app and claude.ai
+  OAUTH_PROVIDER?: OAuthHelpers; // added by the OAuth library for the sign-in page
 }
 
 export type Json = Record<string, any>;

@@ -4,7 +4,7 @@ import { build } from "esbuild";
 import { Miniflare, Response as MfResponse } from "miniflare";
 import nacl from "tweetnacl";
 
-const { outputFiles } = await build({ entryPoints: [new URL("../src/index.ts", import.meta.url).pathname], bundle: true, format: "esm", write: false, target: "esnext" });
+const { outputFiles } = await build({ entryPoints: [new URL("../src/index.ts", import.meta.url).pathname], bundle: true, format: "esm", write: false, target: "esnext", external: ["cloudflare:*"] });
 const script = outputFiles[0].text;
 
 export const conv = (id, over = {}) => ({
@@ -179,7 +179,8 @@ export function makeBee() {
 }
 
 // `bindings` overrides the defaults; pass a value of undefined to leave a secret unset.
-export async function start(beeState = makeBee(), bindings = {}) {
+// `origin` is the address requests arrive on; sign-in needs HTTPS and the OAUTH_KV storage (`kv`).
+export async function start(beeState = makeBee(), bindings = {}, { origin = "https://x", kv = true } = {}) {
   const all = { BEE_API: "https://bee.test", BEE_TOKEN: "bee-token", ADMIN_TOKEN: "admin-key", PUSHBULLET_TOKEN: "pb-token", ...bindings };
   for (const k of Object.keys(all)) if (all[k] === undefined) delete all[k];
   const mf = new Miniflare({
@@ -191,6 +192,7 @@ export async function start(beeState = makeBee(), bindings = {}) {
         compatibilityDate: "2026-08-01",
         r2Buckets: ["ARCHIVE"],
         d1Databases: ["DB"],
+        kvNamespaces: kv ? ["OAUTH_KV"] : [],
         bindings: all,
         outboundService: (req) => beeState.handle(req),
       },
@@ -200,7 +202,7 @@ export async function start(beeState = makeBee(), bindings = {}) {
   const db = await mf.getD1Database("DB");
   const r2 = await mf.getR2Bucket("ARCHIVE");
   const api = (path, { key = "admin-key", method = "GET", body, headers = {} } = {}) =>
-    mf.dispatchFetch(`http://x${path}`, { method, headers: { ...(key ? { Authorization: `Bearer ${key}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
+    mf.dispatchFetch(`${origin}${path}`, { method, headers: { ...(key ? { Authorization: `Bearer ${key}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
   const tool = async (name, args = {}, key = "admin-key") => {
     const res = await api(`/api/tools/${name}`, { method: "POST", body: args, key });
     return { status: res.status, text: await res.text() };

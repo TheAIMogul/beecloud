@@ -11,6 +11,8 @@
   "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "beecloud-archive" }],
   // The search index, sync queue and agent keys. The Deploy to Cloudflare button fills in the id.
   "d1_databases": [{ "binding": "DB", "database_name": "beecloud-index", "database_id": "00000000-0000-0000-0000-000000000000" }],
+  // Sign-in grants for apps that can't send a key (the Gemini app, claude.ai). Created on first deploy.
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
   "vars": { "BEE_API": "https://api.developer.bee.amazon.dev" }
-  // Optional secrets: PUSHBULLET_TOKEN (phone alerts), ADMIN_TOKEN (admin key recovery), BEE_TOKEN (Bee key override)
+  // Optional secrets: ACCESS_PASSWORD (a shared password for agents), PUSHBULLET_TOKEN (phone alerts), ADMIN_TOKEN (admin key recovery), BEE_TOKEN (Bee key override)
 }

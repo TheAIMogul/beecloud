@@ -16,10 +16,12 @@
     "bindings": {
       "ARCHIVE": { "description": "R2 bucket that holds the permanent archive of your Bee data." },
       "DB": { "description": "D1 database for the search index, sync queue and agent keys." },
-      "BEE_API": { "description": "Bee's developer API. Leave as is." }
+      "BEE_API": { "description": "Bee's developer API. Leave as is." },
+      "OAUTH_KV": { "description": "Sign-in storage for apps such as the Gemini app and claude.ai that can't send a key." }
     }
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.4.0",
     "tweetnacl": "1.0.3"
   },
   "devDependencies": {

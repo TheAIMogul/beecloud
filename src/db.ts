@@ -2,7 +2,7 @@
 // so this whole database can be rebuilt from the archive (see rebuildIndex).
 import { DEFAULT_TZ, Env } from "./env";
 
-const SCHEMA_VERSION = "1";
+const SCHEMA_VERSION = "2";
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS items (
@@ -32,6 +32,7 @@ const SCHEMA = [
     attempts INTEGER NOT NULL DEFAULT 0, next_try INTEGER NOT NULL DEFAULT 0,
     last_status INTEGER, last_error TEXT, created_at INTEGER NOT NULL, delivered_at INTEGER)`,
   `CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries (status, next_try)`,
+  `CREATE TABLE IF NOT EXISTS auth_failures (ip TEXT PRIMARY KEY, failures INTEGER NOT NULL, first_at INTEGER NOT NULL)`,
 ];
 
 let ready: Promise<void> | null = null;

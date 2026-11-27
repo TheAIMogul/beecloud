@@ -11,6 +11,7 @@
 - **33 tools for agents:** "what happened on Tuesday", "what did we decide about pricing", "add a todo", "where was I on Saturday".
 - **Yours alone:** it runs in your Cloudflare account. No third-party server ever sees your data.
 - **No computer needed:** it syncs from the cloud every 15 minutes.
+- **Agents set themselves up:** give any agent your BeeCloud address and it finds the instructions, the MCP server and every tool there. Apps such as the Gemini app and claude.ai sign in with a standard login page.
 
 BeeCloud is an independent open-source project. It is not affiliated with or endorsed by Amazon or Bee.
 
@@ -45,7 +46,8 @@ BeeCloud starts importing your history right away. The first import takes a few 
 ### 4. Give your agents access
 On the setup page, type a name (such as `claude`) and press **Create key**. You get that agent's key plus ready-to-paste connection details:
 
-- **claude.ai:** Settings → Connectors → Add custom connector, and paste the connector URL.
+- **Gemini app:** gemini.google.com → Settings → Connected apps → Add a custom app, and enter your BeeCloud address. A BeeCloud sign-in page opens: type your admin key (or your password, see below) and press **Allow**. No agent key needed.
+- **claude.ai:** Settings → Connectors → Add custom connector, and enter your BeeCloud address. Sign in the same way. (The connector URL with a key built in also still works.)
 - **Claude Code:** paste the `claude mcp add ...` command.
 - **Anything else:** paste the prompt, or add the MCP address and header to the tool's config:
 
@@ -62,6 +64,10 @@ On the setup page, type a name (such as `claude`) and press **Create key**. You 
 ```
 
 Make one key per agent. You can revoke any one of them from the setup page without touching the others.
+
+**Agents that read instructions:** just give them your BeeCloud address. Agents and tools that fetch it get full setup instructions as text, and the same text is a page at `/guide` and a file at `/llms.txt`. There's also `/skill.md` (an agent skill) and `/openapi.json` (for tools without MCP). None of them contain a key or any of your data.
+
+**Prefer one password over a key per agent?** Set an `ACCESS_PASSWORD` secret (see Optional settings). Agents can then send the password instead of a key, and you can type it on the sign-in page.
 
 ### 5. Try it
 Ask your agent:
@@ -119,7 +125,9 @@ Bee's servers ──every 15 min──▶ BeeCloud Worker ──▶ R2 bucket  (
 - **Your account only.** All data stays in your Cloudflare account. The Worker talks to Bee, and to Pushbullet if you turn alerts on. Nothing else.
 - **Keys are hashed.** Admin and agent keys are stored as SHA-256 hashes and shown once.
 - **Scoped keys.** Agent keys can read everything and change todos and facts. Only the admin key can make keys or webhooks.
-- **Keys in headers.** The one exception is `/mcp/<agent key>`, for tools that can't send headers such as claude.ai connectors. Treat that URL like a password. Admin keys are refused in a URL.
+- **Keys in headers.** The one exception is `/mcp/<agent key>`, for tools that can't send headers. Treat that URL like a password. Admin keys and the password are refused in a URL.
+- **App sign-in.** Apps that can't send a key use standard OAuth 2.1 with PKCE. Only someone with the password or an admin key can approve an app, and approved apps get agent access, never admin. Sign-ins are stored in a Workers KV namespace (`OAUTH_KV`) and only work over HTTPS.
+- **Guessing is slow.** Ten wrong passwords or keys from one address lock it out for 15 minutes. Long random keys don't count, so a stale key can't lock out your other agents.
 - **Your Bee token** is stored in your D1 database after you approve the connection. To hold it as a Worker secret instead, set `BEE_TOKEN`.
 - **This is sensitive data.** Conversation transcripts can include other people. Follow the recording and consent laws where you live, and only give keys to tools you trust.
 
@@ -129,6 +137,7 @@ Set these as secrets on the Worker (Cloudflare dashboard → your Worker → Set
 
 | Secret | What it does |
 |---|---|
+| `ACCESS_PASSWORD` | One shared password agents can use instead of a key (agent access, never admin). Also accepted on the app sign-in page |
 | `PUSHBULLET_TOKEN` | Phone alerts through [Pushbullet](https://www.pushbullet.com/) when Bee rejects the key, syncing keeps failing, an item won't save, or nothing new arrives for 24 hours |
 | `ADMIN_TOKEN` | A fixed admin key. Also how you get back in if you lose the one from the setup page |
 | `BEE_TOKEN` | A Bee developer token, used instead of the one saved by the setup page |
@@ -157,6 +166,8 @@ BeeCloud itself adds no charge beyond Cloudflare's Workers Paid plan at personal
 | Someone else created the admin key first | Set an `ADMIN_TOKEN` secret, sign in with it, then revoke the key named `admin` with the `revoke_key` tool |
 | Agent doesn't see the tools | Restart the agent or open a new chat |
 | An agent gets `401` | The key is wrong or revoked. Make a new one on the setup page |
+| An agent gets `429` | Ten wrong passwords or keys came from that address. Wait 15 minutes |
+| The Gemini app or claude.ai can't find a sign-in | Use the `https://` address, and check the Worker has the `OAUTH_KV` binding (the Deploy button and `wrangler deploy` create it) |
 | Data looks stale | Open the setup page: it shows the last sync and the latest problem |
 
 ## Run it yourself, without the button
@@ -174,6 +185,8 @@ Put the `database_id` that the last command prints into `wrangler.jsonc`, then:
 ```bash
 npm run deploy
 ```
+
+The first deploy also creates the `OAUTH_KV` namespace that app sign-in uses.
 
 ## Development
 

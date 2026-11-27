@@ -10,7 +10,7 @@ CONNECT
 - Header: Authorization: Bearer YOUR_KEY
 - If you can't send headers, use this address instead: https://YOUR-WORKER.workers.dev/mcp/YOUR_KEY
 - If you can't use MCP, call https://YOUR-WORKER.workers.dev/api/tools/<tool name> with POST, a JSON body of arguments, and the same header.
-- Name the server "bee-cloud". There is no OAuth.
+- Name the server "bee-cloud". Full setup instructions: https://YOUR-WORKER.workers.dev/llms.txt
 
 HOW TO USE IT
 - "What happened on <day>": get_day with date (YYYY-MM-DD).

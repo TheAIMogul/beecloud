@@ -36,7 +36,10 @@ export function conversationMarkdown(c: Json, tz: string, includeTranscript = tr
   lines.push(`- state: ${c.state}`, "");
   if (c.summary) lines.push(String(c.summary).trim(), "");
   if (includeTranscript) {
-    const utterances = (c.transcriptions || []).flatMap((t: Json) => t.utterances || []);
+    // Bee can return utterances out of order, so sort by when each was spoken.
+    const utterances = (c.transcriptions || [])
+      .flatMap((t: Json) => t.utterances || [])
+      .sort((a: Json, b: Json) => (Number(a.spoken_at) || 0) - (Number(b.spoken_at) || 0));
     if (utterances.length) {
       lines.push("## Transcript", "");
       for (const u of utterances) {
